@@ -59,20 +59,4 @@ RUN mkdir -p /logs logs temp && \
 
 USER appuser
 
-EXPOSE 8000
-
-# CMD ["uv", "run", "gunicorn", "app.api.main:app", \
-# Use the uv-installed environment directly instead of uv run
-CMD [".venv/bin/python", "-m", "gunicorn", "api.main:app", \
-    "--workers", "2", \
-    "--worker-class", "uvicorn.workers.UvicornWorker", \
-    "--bind", "0.0.0.0:8000", \
-    "--worker-connections", "1000", \
-    "--max-requests", "1000", \
-    "--max-requests-jitter", "100", \
-    "--preload", \
-    "--timeout", "180", \
-    "--keep-alive", "5", \
-    "--access-logfile", "-", \
-    "--error-logfile", "-", \
-    "--log-level", "info"]
+CMD [".venv/bin/python", "logger.py"]
