@@ -1,4 +1,5 @@
 import os
+import time
 import asyncio
 import uuid
 import random
@@ -24,12 +25,18 @@ def ensure_database(dsn: str):
     u = urlparse(dsn)
     db = (u.path or "/postgres").lstrip("/")
     base = f"postgresql://{u.username}:{u.password}@{u.hostname}:{u.port}/postgres"
-    with psycopg2.connect(base) as conn:
-        conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (db,))
-            if cur.fetchone() is None:
-                cur.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(db)))
+    while True:
+        try:
+            with psycopg2.connect(base) as conn:
+                conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (db,))
+                    if cur.fetchone() is None:
+                        cur.execute(sql.SQL("CREATE DATABASE {}" ).format(sql.Identifier(db)))
+            break
+        except Exception as e:
+            print(f"ensure_database retrying: {e}")
+            time.sleep(3)
 
 
 def setup_schema(dsn: str):
@@ -41,6 +48,15 @@ def setup_schema(dsn: str):
             cur.execute(
                 "ALTER TABLE vllm_log ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT NOW()"
             )
+
+def ensure_schema(dsn: str):
+    while True:
+        try:
+            setup_schema(dsn)
+            return
+        except Exception as e:
+            print(f"setup_schema retrying: {e}")
+            time.sleep(3)
 
 
 def _write_once_blocking(dsn: str):
@@ -54,7 +70,6 @@ def _write_once_blocking(dsn: str):
 
 
 async def writer_loop(dsn: str):
-    await asyncio.to_thread(setup_schema, dsn)
     while True:
         try:
             await asyncio.to_thread(_write_once_blocking, dsn)
@@ -90,10 +105,8 @@ async def main():
     host = "postgredb"
     port = os.environ.get("POSTGRES_PORT", "5432")
     dsn = f"postgresql://{user}:{password}@{host}:{port}/{db}"
-    try:
-        await asyncio.to_thread(ensure_database, dsn)
-    except Exception as e:
-        print(f"ensure_database failed: {e}")
+    await asyncio.to_thread(ensure_database, dsn)
+    await asyncio.to_thread(ensure_schema, dsn)
     await asyncio.gather(
         cleanup_loop(dsn),
         writer_loop(dsn),
