@@ -1,0 +1,103 @@
+x-base-config: &base-config
+  restart: always
+  deploy:
+    resources:
+      limits:
+        memory: 1G
+      reservations:
+        memory: 512M
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  vllm-openai:
+    image: vllm/vllm-openai:v0.10.2
+    container_name: vllm
+    ipc: host
+    ports:
+    #   - "8000:8000" # 8000 IS UNUSED
+      - "9009:9009"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    env_file:
+      - .env
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN}
+      TORCH_CUDA_ARCH_LIST: 7.5
+      VLLM_USE_V1: 0
+    command: --model Qwen/Qwen3-1.7B --served-model-name qwen3-1.7b --enforce-eager --max-model-len 3k --host 0.0.0.0 --port 9009 --swap-space 0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - vllm-network
+
+  
+  litellm:
+    container_name: litellm
+    image: ghcr.io/berriai/litellm:v1.75.5-stable
+    ports:
+      - "8001:4000"
+    volumes:
+      - ./litellm_config/litellm_config.yaml:/app/config.yaml # Mount the local configuration file
+    command: [ "--config", "/app/config.yaml", "--port", "4000" ]
+    env_file:
+      - .env
+    environment:
+      LITELLM_MASTER_KEY: $LITELLM_MASTER_KEY
+      UI_USERNAME: $LITELLM_UI_USERNAME
+      UI_PASSWORD: $LITELLM_UI_KEY
+      # CUSTOM_AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+      # CUSTOM_AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+      # CUSTOM_AWS_REGION_NAME: $AWS_REGION_NAME
+      # GEMINI_API_KEY: $GEMINI_API_KEY
+      # QWEN_API_KEY: $QWEN_API_KEY
+    <<: *base-config
+    depends:
+      - vllm-openai
+      - postgredb
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    networks:
+      - vllm-network
+
+  postgredb:
+    image: pgvector/pgvector:pg16
+    container_name: postgredb
+    # environment:
+    #   - DB_HOST=localhost
+    env_file:
+      - .env
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: always
+    ports:
+      - "5432:5432"
+    deploy:
+      resources:
+        limits:
+          memory: 3g
+        reservations:
+          memory: 2g
+    networks:
+      - vllm-network
+    <<: *base-config
+
+
+networks:
+  vllm-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
