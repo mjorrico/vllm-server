@@ -4,15 +4,16 @@ import uuid
 import random
 from datetime import datetime
 from urllib.parse import urlparse
-import psycopg
-from psycopg import sql
+import psycopg2
+from psycopg2 import sql
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 def ensure_database(dsn: str):
     u = urlparse(dsn)
     db = (u.path or "/postgres").lstrip("/")
     base = f"postgresql://{u.username}:{u.password}@{u.hostname}:{u.port}/postgres"
-    with psycopg.connect(base) as conn:
-        conn.autocommit = True
+    with psycopg2.connect(base) as conn:
+        conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
         with conn.cursor() as cur:
             cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (db,))
             if cur.fetchone() is None:
@@ -21,7 +22,7 @@ def ensure_database(dsn: str):
 def run(dsn: str):
     while True:
         try:
-            with psycopg.connect(dsn) as conn:
+            with psycopg2.connect(dsn) as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         "CREATE TABLE IF NOT EXISTS vllm_log (id uuid PRIMARY KEY, time time NOT NULL, value double precision NOT NULL)"
