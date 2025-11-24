@@ -18,7 +18,7 @@ services:
     container_name: vllm
     ipc: host
     ports:
-    #   - "8000:8000" # 8000 IS UNUSED
+      #   - "8000:8000" # 8000 IS UNUSED
       - "9009:9009"
     volumes:
       - ~/.cache/huggingface:/root/.cache/huggingface
@@ -39,7 +39,6 @@ services:
     networks:
       - vllm-network
 
-  
   litellm:
     container_name: litellm
     image: ghcr.io/berriai/litellm:v1.75.5-stable
@@ -47,7 +46,7 @@ services:
       - "8001:4000"
     volumes:
       - ./litellm_config/litellm_config.yaml:/app/config.yaml # Mount the local configuration file
-    command: [ "--config", "/app/config.yaml", "--port", "4000" ]
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
     env_file:
       - .env
     environment:
@@ -60,7 +59,7 @@ services:
       # GEMINI_API_KEY: $GEMINI_API_KEY
       # QWEN_API_KEY: $QWEN_API_KEY
     <<: *base-config
-    depends:
+    depends_on:
       - vllm-openai
       - postgredb
     deploy:
@@ -69,6 +68,19 @@ services:
           memory: 1G
         reservations:
           memory: 512M
+    networks:
+      - vllm-network
+
+  vllm_logger:
+    container_name: vllm_logger
+    build:
+      context: ./vllm_logger
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    <<: *base-config
     networks:
       - vllm-network
 
@@ -81,6 +93,7 @@ services:
       - .env
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      # - ./postgres_config/init.sql:/docker-entrypoint-initdb.d/init.sql
     restart: always
     ports:
       - "5432:5432"
@@ -93,7 +106,6 @@ services:
     networks:
       - vllm-network
     <<: *base-config
-
 
 networks:
   vllm-network:
