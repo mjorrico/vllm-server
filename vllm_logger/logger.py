@@ -76,8 +76,8 @@ def _cleanup_once_blocking(dsn: str):
 async def cleanup_loop(dsn: str):
     while True:
         try:
-            await asyncio.to_thread(_cleanup_once_blocking, dsn)
             await asyncio.sleep(3600)
+            await asyncio.to_thread(_cleanup_once_blocking, dsn)
         except Exception as e:
             print(f"cleanup retrying: {e}")
             await asyncio.sleep(10)
