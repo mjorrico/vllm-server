@@ -7,11 +7,11 @@ RUN apt-get update && \
     git ffmpeg poppler-utils curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml ./
 
 # Ensure uv installs to /app/.venv
 RUN --mount=type=cache,target=/tmp/uv-cache \
-    UV_PROJECT_ENVIRONMENT=/app/.venv uv sync --frozen
+    UV_PROJECT_ENVIRONMENT=/app/.venv uv sync
 
 COPY . .
 
