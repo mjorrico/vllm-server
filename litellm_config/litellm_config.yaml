@@ -1,18 +1,19 @@
-model_list:
-  - model_name: qwen3-jordan
-    litellm_params:
-      model: hosted_vllm/qwen3-1.7b
-      api_base: http://vllm:9009/v1
-      input_cost_per_token: 0.00000011
-      output_cost_per_token: 0.00000126
-
 litellm_settings:
-  verbose: False
-  modify_params: true
+  cache: false
   drop_params: true
-  cache: False # Using redis
   general_settings:
-    master_key: os.environ/LITELLM_MASTER_KEY
+    DISABLE_ADMIN_UI: false
     database_url: postgresql://jordan:16092025dwi@postgredb:5432/litellm
-    DISABLE_ADMIN_UI: False
+    master_key: je-secret-key
     store_model_in_db: true
+  modify_params: true
+  public_model_groups:
+  - qwen3-jordan
+  verbose: false
+model_list:
+- litellm_params:
+    api_base: http://vllm:9009/v1
+    input_cost_per_token: 1.1e-07
+    model: hosted_vllm/qwen3-1.7b
+    output_cost_per_token: 1.26e-06
+  model_name: qwen3-jordan
