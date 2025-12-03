@@ -13,16 +13,6 @@ x-base-config: &base-config
       max-file: "3"
 
 services:
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: cloudflared
-    restart: unless-stopped
-    # The --no-autoupdate flag is technically redundant in Docker (images don't update themselves),
-    # but I have kept it here to match your specific request.
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TOKEN}
-    networks:
-      - vllm-network
-
   vllm:
     image: vllm/vllm-openai:v0.10.2
     container_name: vllm
