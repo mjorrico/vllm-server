@@ -56,7 +56,7 @@ services:
       LITELLM_DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgredb:5432/${LITELLM_POSTGRES_DB:-litellm}"
     <<: *base-config
     depends_on:
-      - vllm-openai
+      - vllm
       - postgredb
     deploy:
       resources:
