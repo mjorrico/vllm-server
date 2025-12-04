@@ -252,13 +252,13 @@ services:
     restart: always
     entrypoint: sh
     # create the 'langfuse' bucket before starting the service
-    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address "0.0.0.0:9001" /data'
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniosecret} # CHANGEME
     ports:
       - 9090:9000
-      - 127.0.0.1:9091:9001
+      - 9091:9001
     volumes:
       - langfuse_minio_data:/data
     healthcheck:
