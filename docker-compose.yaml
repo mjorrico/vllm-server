@@ -76,6 +76,7 @@ services:
       - .env
     environment:
       LITELLM_MASTER_KEY: $LITELLM_MASTER_KEY
+      NO_DOCS: ${LITELLM_NO_DOCS:-true}
       UI_USERNAME: $LITELLM_UI_USERNAME
       UI_PASSWORD: $LITELLM_UI_KEY
       DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgredb:5432/${LITELLM_POSTGRES_DB:-litellm}"
