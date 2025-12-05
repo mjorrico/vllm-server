@@ -1,16 +1,3 @@
-litellm_settings:
-  cache: false
-  drop_params: true
-  general_settings:
-    DISABLE_ADMIN_UI: false
-    database_url: postgresql://jordan:16092025dwi@postgredb:5432/litellm
-    master_key: je-secret-key
-    store_model_in_db: true
-    store_prompts_in_spend_logs: true
-  modify_params: true
-  public_model_groups:
-    - qwen3-jordan
-  verbose: false
 model_list:
   - litellm_params:
       api_base: http://vllm:9009/v1
@@ -18,3 +5,18 @@ model_list:
       model: hosted_vllm/qwen3-1.7b
       output_cost_per_token: 1.26e-06
     model_name: qwen3-jordan
+
+litellm_settings:
+  cache: false
+  drop_params: true
+  modify_params: true
+  public_model_groups:
+    - qwen3-jordan
+  verbose: false
+
+general_settings:
+  DISABLE_ADMIN_UI: false
+  database_url: postgresql://jordan:16092025dwi@postgredb:5432/litellm
+  master_key: je-secret-key
+  store_model_in_db: true
+  store_prompts_in_spend_logs: true
