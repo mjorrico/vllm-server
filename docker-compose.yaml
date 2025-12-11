@@ -1,16 +1,12 @@
 x-base-config: &base-config
   restart: always
-  deploy:
-    resources:
-      limits:
-        memory: 1G
-      reservations:
-        memory: 512M
   logging:
     driver: "json-file"
     options:
       max-size: "10m"
       max-file: "3"
+  networks:
+    - vllm-network
 
 services:
   nginx:
@@ -21,51 +17,43 @@ services:
       # - ./certbot/conf:/etc/letsencrypt:ro
       # - ./certbot/www:/var/www/certbot:ro
     depends_on:
-      - vllm
+      # - vllm
       - litellm
     ports:
       - 80:80
         #- 443:443
-    networks:
-      - vllm-network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    restart: always
     deploy:
       resources:
         limits:
           memory: 512M
         reservations:
           memory: 256M
+    <<: *base-config
 
-  vllm:
-    image: vllm/vllm-openai:v0.10.2
-    container_name: vllm
-    ipc: host
-    ports:
-      #   - "8000:8000" # 8000 IS UNUSED
-      - "9009:9009"
-    volumes:
-      - ~/.cache/huggingface:/root/.cache/huggingface
-    env_file:
-      - .env
-    environment:
-      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN}
-      TORCH_CUDA_ARCH_LIST: 7.5
-      VLLM_USE_V1: 0
-    command: --model Qwen/Qwen3-1.7B --served-model-name qwen3-1.7b --enforce-eager --max-model-len 3k --host 0.0.0.0 --port 9009 --swap-space 0
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    networks:
-      - vllm-network
+  # vllm:
+  #   image: vllm/vllm-openai:v0.10.2
+  #   container_name: vllm
+  #   ipc: host
+  #   ports:
+  #     - "9009:9009"
+  #     #   - "8000:8000" # 8000 IS UNUSED
+  #   volumes:
+  #     - ~/.cache/huggingface:/root/.cache/huggingface
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN}
+  #     TORCH_CUDA_ARCH_LIST: 7.5
+  #     VLLM_USE_V1: 0
+  #   command: --model Qwen/Qwen3-1.7B --served-model-name qwen3-1.7b --enforce-eager --max-model-len 3k --host 0.0.0.0 --port 9009 --swap-space 0
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
+  #   <<: *base-config
 
   litellm:
     container_name: litellm
@@ -82,10 +70,9 @@ services:
       NO_DOCS: ${LITELLM_NO_DOCS:-true}
       UI_USERNAME: $LITELLM_UI_USERNAME
       UI_PASSWORD: $LITELLM_UI_KEY
-      DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgredb:5432/${LITELLM_POSTGRES_DB:-litellm}"
-    <<: *base-config
+      DATABASE_URL: $LITELLM_DB_URI
     depends_on:
-      - vllm
+      # - vllm
       - postgredb
     deploy:
       resources:
@@ -93,8 +80,7 @@ services:
           memory: 1G
         reservations:
           memory: 512M
-    networks:
-      - vllm-network
+    <<: *base-config
 
   vllm_logger:
     container_name: vllm_logger
@@ -102,14 +88,21 @@ services:
       context: ./vllm_logger
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "8008:8000"
     env_file:
       - .env
-    <<: *base-config
     depends_on:
       - postgredb
-    networks:
-      - vllm-network
+    volumes:
+      - ./vllm_logger/logger.py:/app/logger.py
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    <<: *base-config
 
   postgredb:
     image: pgvector/pgvector:pg16
@@ -120,7 +113,7 @@ services:
       - .env
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      # - ./postgres_config/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./postgres_config/init.sh:/docker-entrypoint-initdb.d/init.sh
     restart: always
     ports:
       - "5432:5432"
@@ -135,8 +128,6 @@ services:
           memory: 3g
         reservations:
           memory: 2g
-    networks:
-      - vllm-network
     <<: *base-config
 
   minio:
@@ -148,9 +139,9 @@ services:
     volumes:
       - minio-data:/data
     command: server /data --console-address ":9001"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
+    # ports:
+    #   - "9000:9000"
+    #   - "9001:9001"
     healthcheck:
       test:
         [
@@ -162,6 +153,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    <<: *base-config
 
   create-bucket:
     image: minio/mc:latest
@@ -175,8 +167,9 @@ services:
       - |
         mc alias set myminio "http://${MINIO_HOST}:${MINIO_PORT}" \
           "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}"
-        mc mb --ignore-existing "myminio/${MINIO_BUCKET:-mlflow}"
+        mc mb --ignore-existing "myminio/${MLFLOW_MINIO_BUCKET:-mlflow}"
     restart: "no"
+    <<: *base-config
 
   mlflow:
     image: ghcr.io/mlflow/mlflow:${MLFLOW_VERSION}
@@ -189,7 +182,6 @@ services:
       create-bucket:
         condition: service_completed_successfully
     environment:
-      # Backend store URI built from vars
       MLFLOW_BACKEND_STORE_URI: ${MLFLOW_BACKEND_STORE_URI}
 
       # S3/MinIO settings
@@ -227,6 +219,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 30
+    <<: *base-config
 
 networks:
   vllm-network:
@@ -235,9 +228,5 @@ networks:
 volumes:
   postgres-data:
     driver: local
-  langfuse_clickhouse_data:
-    driver: local
-  langfuse_clickhouse_logs:
-    driver: local
-  langfuse_minio_data:
+  minio-data:
     driver: local
