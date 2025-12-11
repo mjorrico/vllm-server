@@ -125,7 +125,11 @@ def run():
             time.sleep(2)
 
     ensure_table(conn)
-    print("[INFO] Entering main loop - will insert data every 30 seconds", flush=True)
+    INSERTION_FREQUENCY = 30  # seconds
+    print(
+        f"[INFO] Entering main loop - will insert data every {INSERTION_FREQUENCY} seconds",
+        flush=True,
+    )
 
     while True:
         try:
@@ -155,7 +159,7 @@ def run():
                         sys.exit(1)
                     time.sleep(5)
 
-        time.sleep(30)
+        time.sleep(INSERTION_FREQUENCY)
 
 
 if __name__ == "__main__":
