@@ -15,8 +15,41 @@ CLEANUP_INTERVAL = 16
 RETENTION_SECONDS = 60
 
 
+def get_partition_info(dt):
+    """Generate partition name and bounds for a given datetime (minute granularity)."""
+    from datetime import timedelta
+
+    # Truncate to minute
+    dt_minute = dt.replace(second=0, microsecond=0)
+    partition_name = f"vllm_log_{dt_minute.strftime('%Y_%m_%d_%H_%M')}"
+
+    # Partition covers [dt_minute, dt_minute + 1 minute)
+    from_time = dt_minute
+    to_time = dt_minute + timedelta(minutes=1)
+
+    return partition_name, from_time, to_time
+
+
+async def ensure_partition_exists(conn, dt):
+    """Create a partition if it doesn't exist for the given datetime."""
+    partition_name, from_time, to_time = get_partition_info(dt)
+
+    try:
+        await conn.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {partition_name}
+            PARTITION OF vllm_log
+            FOR VALUES FROM ('{from_time.isoformat()}') TO ('{to_time.isoformat()}');
+            """
+        )
+        print(f"[INFO] Ensured partition: {partition_name}", flush=True)
+    except Exception as e:
+        print(f"[ERROR] Failed to create partition {partition_name}: {e}", flush=True)
+        raise
+
+
 async def ensure_schema(pool):
-    """Initializes the database schema."""
+    """Initializes the database schema and creates initial partitions."""
     async with pool.acquire() as conn:
         await conn.execute(
             """
@@ -33,25 +66,86 @@ async def ensure_schema(pool):
         )
         print("[INFO] Schema ensured.", flush=True)
 
+        # Create 3 partitions in advance (current + 2 future minutes)
+        now = datetime.now()
+        for i in range(3):
+            from datetime import timedelta
+
+            target_time = now + timedelta(minutes=i)
+            await ensure_partition_exists(conn, target_time)
+
+        print("[INFO] Initial partitions created.", flush=True)
+
 
 async def task_cleanup(pool):
-    """Runs once every 24 hours to delete old logs."""
+    """Manages partitions: creates 3 in advance and drops old ones."""
     print(f"[TASK] Cleanup task started (Interval: {CLEANUP_INTERVAL}s)", flush=True)
     while True:
         try:
-            # asyncpg uses $1, $2 syntax, not %s
-            result = await pool.execute(
-                f"DELETE FROM vllm_log WHERE created_at < NOW() - INTERVAL '{RETENTION_SECONDS} seconds'"
-            )
-            # result string looks like "DELETE 150"
-            print(
-                f"[CLEANUP] {result} (Records older than {RETENTION_SECONDS} seconds)",
-                flush=True,
-            )
+            async with pool.acquire() as conn:
+                # 1. Create 3 partitions in advance
+                now = datetime.now()
+                from datetime import timedelta
+
+                for i in range(3):
+                    target_time = now + timedelta(minutes=i)
+                    await ensure_partition_exists(conn, target_time)
+
+                # 2. Drop partitions older than retention period
+                retention_threshold = now - timedelta(seconds=RETENTION_SECONDS)
+
+                # Query for old partitions
+                old_partitions = await conn.fetch(
+                    """
+                    SELECT tablename FROM pg_tables
+                    WHERE schemaname = 'public'
+                    AND tablename LIKE 'vllm_log_%'
+                    AND tablename != 'vllm_log'
+                    """
+                )
+
+                dropped_count = 0
+                for partition_record in old_partitions:
+                    partition_name = partition_record["tablename"]
+                    # Parse partition name: vllm_log_YYYY_MM_DD_HH_MI
+                    try:
+                        parts = partition_name.split("_")
+                        if len(parts) == 7:
+                            year, month, day, hour, minute = (
+                                int(parts[2]),
+                                int(parts[3]),
+                                int(parts[4]),
+                                int(parts[5]),
+                                int(parts[6]),
+                            )
+                            partition_time = datetime(year, month, day, hour, minute)
+
+                            if partition_time < retention_threshold:
+                                await conn.execute(
+                                    f"DROP TABLE IF EXISTS {partition_name}"
+                                )
+                                print(
+                                    f"[CLEANUP] Dropped partition: {partition_name}",
+                                    flush=True,
+                                )
+                                dropped_count += 1
+                    except (ValueError, IndexError) as e:
+                        print(
+                            f"[WARNING] Could not parse partition name {partition_name}: {e}",
+                            flush=True,
+                        )
+
+                if dropped_count > 0:
+                    print(
+                        f"[CLEANUP] Dropped {dropped_count} old partitions (older than {RETENTION_SECONDS} seconds)",
+                        flush=True,
+                    )
+                else:
+                    print(f"[CLEANUP] No old partitions to drop", flush=True)
+
         except Exception as e:
             print(f"[ERROR] Cleanup failed: {e}", flush=True)
 
-        # Sleep for 24 hours (non-blocking)
         await asyncio.sleep(CLEANUP_INTERVAL)
 
 
@@ -82,6 +176,9 @@ async def task_logger(pool):
 
             # 2. Insert Data (Async)
             async with pool.acquire() as conn:
+                # Ensure partition exists for current time
+                await ensure_partition_exists(conn, datetime.now())
+
                 await conn.executemany(
                     """
                     INSERT INTO vllm_log 
