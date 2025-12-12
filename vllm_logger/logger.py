@@ -1,7 +1,6 @@
 import asyncio
 import os
 import sys
-import uuid
 import asyncpg
 import pynvml
 from datetime import datetime
@@ -19,16 +18,14 @@ async def ensure_schema(pool):
         await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS vllm_log (
-                id uuid PRIMARY KEY,
+                created_at timestamptz NOT NULL,
                 gpu_index integer NOT NULL,
                 gpu_utilization double precision NOT NULL,
                 memory_used bigint NOT NULL,
                 memory_total bigint NOT NULL,
                 temperature double precision,
-                created_at timestamptz NOT NULL DEFAULT NOW()
+                PRIMARY KEY (created_at, gpu_index)
             );
-            CREATE INDEX IF NOT EXISTS idx_vllm_log_created_at 
-            ON vllm_log(created_at);
         """
         )
         print("[INFO] Schema ensured.", flush=True)
@@ -65,6 +62,7 @@ async def task_logger(pool):
             # but usually it's sub-millisecond.
             device_count = pynvml.nvmlDeviceGetCount()
             data_batch = []
+            current_time = datetime.now()
 
             for i in range(device_count):
                 handle = pynvml.nvmlDeviceGetHandleByIndex(i)
@@ -79,7 +77,7 @@ async def task_logger(pool):
 
                 # Prepare tuple for bulk insert
                 data_batch.append(
-                    (uuid.uuid4(), i, float(util), mem.used, mem.total, temp)
+                    (current_time, i, float(util), mem.used, mem.total, temp)
                 )
 
             # 2. Insert Data (Async)
@@ -87,7 +85,7 @@ async def task_logger(pool):
                 await conn.executemany(
                     """
                     INSERT INTO vllm_log 
-                    (id, gpu_index, gpu_utilization, memory_used, memory_total, temperature) 
+                    (created_at, gpu_index, gpu_utilization, memory_used, memory_total, temperature) 
                     VALUES ($1, $2, $3, $4, $5, $6)
                 """,
                     data_batch,
@@ -146,13 +144,12 @@ async def populate_test_data_30_days(pool):
 
                     batch.append(
                         (
-                            uuid.uuid4(),
+                            current_time,
                             gpu_index,
                             gpu_utilization,
                             memory_used,
                             memory_total,
                             temperature,
-                            current_time,
                         )
                     )
 
@@ -161,8 +158,8 @@ async def populate_test_data_30_days(pool):
                     await conn.executemany(
                         """
                         INSERT INTO vllm_log 
-                        (id, gpu_index, gpu_utilization, memory_used, memory_total, temperature, created_at) 
-                        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        (created_at, gpu_index, gpu_utilization, memory_used, memory_total, temperature) 
+                        VALUES ($1, $2, $3, $4, $5, $6)
                         """,
                         batch,
                     )
@@ -179,8 +176,8 @@ async def populate_test_data_30_days(pool):
                 await conn.executemany(
                     """
                     INSERT INTO vllm_log 
-                    (id, gpu_index, gpu_utilization, memory_used, memory_total, temperature, created_at) 
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    (created_at, gpu_index, gpu_utilization, memory_used, memory_total, temperature) 
+                    VALUES ($1, $2, $3, $4, $5, $6)
                     """,
                     batch,
                 )
