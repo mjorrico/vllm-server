@@ -10,7 +10,7 @@ from datetime import datetime
 DSN = os.getenv("VLLM_LOGGER_DB_URI")
 LOG_INTERVAL = 5
 CLEANUP_INTERVAL = 60 * 60 * 24  # 24 Hours
-RETENTION_DAYS = 31
+RETENTION_SECONDS = 31 * 24 * 60 * 60
 
 
 async def ensure_schema(pool):
@@ -41,11 +41,11 @@ async def task_cleanup(pool):
         try:
             # asyncpg uses $1, $2 syntax, not %s
             result = await pool.execute(
-                f"DELETE FROM vllm_log WHERE created_at < NOW() - INTERVAL '{RETENTION_DAYS} days'"
+                f"DELETE FROM vllm_log WHERE created_at < NOW() - INTERVAL '{RETENTION_SECONDS} seconds'"
             )
             # result string looks like "DELETE 150"
             print(
-                f"[CLEANUP] {result} (Records older than {RETENTION_DAYS} days)",
+                f"[CLEANUP] {result} (Records older than {RETENTION_SECONDS} seconds)",
                 flush=True,
             )
         except Exception as e:
