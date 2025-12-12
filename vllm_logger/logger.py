@@ -3,7 +3,7 @@ import os
 import sys
 import asyncpg
 import pynvml
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Configuration
 DSN = os.getenv("VLLM_LOGGER_DB_URI")
@@ -59,7 +59,7 @@ async def ensure_schema(pool):
                 memory_used bigint NOT NULL,
                 memory_total bigint NOT NULL,
                 temperature double precision,
-                created_at timestamptz NOT NULL DEFAULT NOW(),
+                created_at timestamptz NOT NULL,
                 PRIMARY KEY (gpu_index, created_at)
             ) PARTITION BY RANGE (created_at);
         """
@@ -67,6 +67,7 @@ async def ensure_schema(pool):
         print("[INFO] Schema ensured.", flush=True)
 
         # Create 3 partitions in advance (current + 2 future minutes)
+
         now = datetime.now()
         for i in range(3):
             from datetime import timedelta
@@ -160,6 +161,9 @@ async def task_logger(pool):
             device_count = pynvml.nvmlDeviceGetCount()
             data_batch = []
 
+            # Get current timestamp in UTC to insert manually
+            current_time = datetime.now(timezone.utc)
+
             for i in range(device_count):
                 handle = pynvml.nvmlDeviceGetHandleByIndex(i)
                 util = pynvml.nvmlDeviceGetUtilizationRates(handle).gpu
@@ -171,20 +175,27 @@ async def task_logger(pool):
                 except pynvml.NVMLError:
                     temp = None
 
-                # Prepare tuple for bulk insert
-                data_batch.append((i, float(util), mem.used, mem.total, temp))
+                # Prepare tuple for bulk insert (now includes created_at)
+                data_batch.append(
+                    (
+                        i,
+                        float(util),
+                        mem.used,
+                        mem.total,
+                        temp,
+                        current_time,
+                    )
+                )
 
             # 2. Insert Data (Async)
             async with pool.acquire() as conn:
                 # Ensure partition exists for current time
-                await ensure_partition_exists(conn, datetime.now())
+                await ensure_partition_exists(conn, current_time)
 
                 await conn.executemany(
-                    """
-                    INSERT INTO vllm_log 
-                    (gpu_index, gpu_utilization, memory_used, memory_total, temperature) 
-                    VALUES ($1, $2, $3, $4, $5)
-                """,
+                    """INSERT INTO vllm_log 
+                    (gpu_index, gpu_utilization, memory_used, memory_total, temperature, created_at) 
+                    VALUES ($1, $2, $3, $4, $5, $6)""",
                     data_batch,
                 )
 
