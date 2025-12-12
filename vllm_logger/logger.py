@@ -27,7 +27,7 @@ async def ensure_schema(pool):
                 memory_total bigint NOT NULL,
                 temperature double precision,
                 created_at timestamptz NOT NULL DEFAULT NOW(),
-                PRIMARY KEY (gpu_index, created_at DESC)
+                PRIMARY KEY (gpu_index, created_at)
             ) PARTITION BY RANGE (created_at);
         """
         )
