@@ -162,7 +162,7 @@ async def task_logger(pool):
             data_batch = []
 
             # Get current timestamp in UTC to insert manually
-            current_time = datetime.now(timezone.utc)
+            current_time = datetime.now()
 
             for i in range(device_count):
                 handle = pynvml.nvmlDeviceGetHandleByIndex(i)
