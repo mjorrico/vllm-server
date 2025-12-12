@@ -1,7 +1,6 @@
 import asyncio
 import os
 import sys
-import uuid
 import asyncpg
 import pynvml
 from datetime import datetime
@@ -12,6 +11,9 @@ LOG_INTERVAL = 5
 CLEANUP_INTERVAL = 60 * 60 * 24  # 24 Hours
 RETENTION_SECONDS = 31 * 24 * 60 * 60
 
+CLEANUP_INTERVAL = 16
+RETENTION_SECONDS = 60
+
 
 async def ensure_schema(pool):
     """Initializes the database schema."""
@@ -19,16 +21,14 @@ async def ensure_schema(pool):
         await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS vllm_log (
-                id uuid PRIMARY KEY,
                 gpu_index integer NOT NULL,
                 gpu_utilization double precision NOT NULL,
                 memory_used bigint NOT NULL,
                 memory_total bigint NOT NULL,
                 temperature double precision,
-                created_at timestamptz NOT NULL DEFAULT NOW()
-            );
-            CREATE INDEX IF NOT EXISTS idx_vllm_log_created_at 
-            ON vllm_log(created_at);
+                created_at timestamptz NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (gpu_index, created_at DESC)
+            ) PARTITION BY RANGE (created_at);
         """
         )
         print("[INFO] Schema ensured.", flush=True)
@@ -78,17 +78,15 @@ async def task_logger(pool):
                     temp = None
 
                 # Prepare tuple for bulk insert
-                data_batch.append(
-                    (uuid.uuid4(), i, float(util), mem.used, mem.total, temp)
-                )
+                data_batch.append((i, float(util), mem.used, mem.total, temp))
 
             # 2. Insert Data (Async)
             async with pool.acquire() as conn:
                 await conn.executemany(
                     """
                     INSERT INTO vllm_log 
-                    (id, gpu_index, gpu_utilization, memory_used, memory_total, temperature) 
-                    VALUES ($1, $2, $3, $4, $5, $6)
+                    (gpu_index, gpu_utilization, memory_used, memory_total, temperature) 
+                    VALUES ($1, $2, $3, $4, $5)
                 """,
                     data_batch,
                 )
