@@ -9,7 +9,7 @@ from datetime import datetime
 # Configuration
 DSN = os.getenv("VLLM_LOGGER_DB_URI")
 LOG_INTERVAL = 5
-CLEANUP_INTERVAL = 86400  # 24 Hours
+CLEANUP_INTERVAL = 60 * 60 * 24  # 24 Hours
 RETENTION_DAYS = 31
 
 
