@@ -142,7 +142,7 @@ services:
       - "9000:9000"
     volumes:
       - clickhouse-data:/var/lib/clickhouse
-      - ./clickhouse_config/init_database.sql:/docker-entrypoint-initdb.s/init_database.sql
+      - ./clickhouse_config/init_database.sql:/docker-entrypoint-initdb.d/init_database.sql
       - ./clickhouse_config/logging.xml:/etc/clickhouse-server/logging.xml
     deploy:
       resources:
