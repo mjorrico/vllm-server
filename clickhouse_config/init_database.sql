@@ -1,4 +1,6 @@
-CREATE TABLE IF NOT EXISTS vllm_log (
+CREATE DATABASE IF NOT EXISTS vllm_logger;
+
+CREATE TABLE IF NOT EXISTS vllm_logger.vllm_log (
     created_at DateTime64(3),
     gpu_index Int32,
     gpu_utilization Float64,
