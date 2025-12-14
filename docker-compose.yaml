@@ -262,3 +262,5 @@ volumes:
     driver: local
   minio-data:
     driver: local
+  clickhouse-data:
+    driver: local
