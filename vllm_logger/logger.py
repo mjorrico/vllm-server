@@ -5,6 +5,7 @@ import httpx
 import pynvml
 import random
 from datetime import datetime, timedelta
+from tqdm import tqdm
 
 # Configuration
 DSN = os.getenv("VLLM_LOGGER_DB_URI")  # Format: http://host:port
@@ -92,43 +93,42 @@ async def task_logger(client):
 
 async def insert_dummy_data(client):
     """Inserts 31 days of dummy metrics for 4 GPUs (1-second intervals)."""
-    print("[TASK] Inserting dummy data for 31 days × 4 GPUs...", flush=True)
-
     headers = {"X-ClickHouse-User": USER, "X-ClickHouse-Key": PASSWORD}
     start_time = datetime.now() - timedelta(days=31)
     batch, total = [], 0
     RETENTION_SECONDS = 31 * 24 * 60 * 60
+    TOTAL_RECORDS = RETENTION_SECONDS * 4
 
     try:
-        for sec in range(RETENTION_SECONDS):
-            ts = (start_time + timedelta(seconds=sec)).strftime("%Y-%m-%d %H:%M:%S.%f")[
-                :-3
-            ]
-            for gpu in range(4):
-                batch.append(
-                    f"('{ts}', {gpu}, {round(random.uniform(20, 95), 2)}, "
-                    f"{random.randint(2_000_000_000, 22_000_000_000)}, 24000000000, {random.randint(45, 85)})"
-                )
+        with tqdm(
+            total=TOTAL_RECORDS, desc="Inserting records", unit=" records"
+        ) as pbar:
+            for sec in range(RETENTION_SECONDS):
+                ts = (start_time + timedelta(seconds=sec)).strftime(
+                    "%Y-%m-%d %H:%M:%S.%f"
+                )[:-3]
+                for gpu in range(4):
+                    batch.append(
+                        f"('{ts}', {gpu}, {round(random.uniform(20, 95), 2)}, "
+                        f"{random.randint(2_000_000_000, 22_000_000_000)}, 24000000000, {random.randint(45, 85)})"
+                    )
 
-            if len(batch) >= 1000 or sec == RETENTION_SECONDS - 1:
-                query = f"INSERT INTO vllm_logger.vllm_log (created_at, gpu_index, gpu_utilization, memory_used, memory_total, temperature) VALUES {','.join(batch)}"
-                resp = await client.post(
-                    DSN, data=query.encode("utf-8"), headers=headers
-                )
+                if len(batch) >= 1000 or sec == RETENTION_SECONDS - 1:
+                    query = f"INSERT INTO vllm_logger.vllm_log (created_at, gpu_index, gpu_utilization, memory_used, memory_total, temperature) VALUES {','.join(batch)}"
+                    resp = await client.post(
+                        DSN, data=query.encode("utf-8"), headers=headers
+                    )
 
-                if resp.status_code == 200:
-                    total += len(batch)
-                    if total % 10000 == 0:
-                        print(
-                            f"[PROGRESS] {total:,} records ({sec/RETENTION_SECONDS*100:.1f}%)",
-                            flush=True,
-                        )
-                else:
-                    print(f"[ERROR] {resp.status_code}: {resp.text}", flush=True)
+                    if resp.status_code == 200:
+                        pbar.update(len(batch))
+                        total += len(batch)
+                    else:
+                        print(f"\n[ERROR] {resp.status_code}: {resp.text}", flush=True)
 
-                batch = []
+                    batch = []
 
         print(f"[SUCCESS] Inserted {total:,} records", flush=True)
+        await asyncio.sleep(31 * 24 * 60 * 60)
     except Exception as e:
         print(f"[ERROR] {e} (inserted {total:,})", flush=True)
 
