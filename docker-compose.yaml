@@ -94,6 +94,7 @@ services:
     depends_on:
       - postgredb
     volumes:
+      - ./vllm_logger/ClickhouseDB/:/app/ClickhouseDB
       - ./vllm_logger/logger.py:/app/logger.py
     deploy:
       resources:
@@ -160,7 +161,6 @@ services:
         soft: 262144
         hard: 262144
     <<: *base-config
-
 
   minio:
     image: minio/minio:latest
