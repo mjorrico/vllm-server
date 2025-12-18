@@ -6,7 +6,7 @@ import random
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 from tqdm import tqdm
-from vllm_logger.ClickhouseDB.main import ClickhouseDB
+from ClickhouseDB import ClickhouseDBClient
 
 # Configuration
 DSN = os.getenv("VLLM_LOGGER_DB_URI")  # Format: http://host:port

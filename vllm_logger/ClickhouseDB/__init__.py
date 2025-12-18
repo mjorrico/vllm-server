@@ -1,5 +1,6 @@
-from .main import ClickhouseDB
+from .main import ClickhouseDBClient
+
 
 __all__ = [
-    "ClickhouseDB",
+    "ClickhouseDBClient",
 ]

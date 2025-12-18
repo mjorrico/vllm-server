@@ -12,7 +12,7 @@ CLICKHOUSE_PASSWORD = os.getenv("CLICKHOUSE_PASSWORD")
 CLICKHOUSE_DB = os.getenv("CLICKHOUSE_DB")
 
 
-class ClickhouseDB:
+class ClickhouseDBClient:
     def __init__(
         self,
         host,
@@ -66,7 +66,7 @@ class ClickhouseDB:
 if __name__ == "__main__":
 
     async def main():
-        db = ClickhouseDB(
+        db = ClickhouseDBClient(
             host="irvins",
             port=8123,
         )
