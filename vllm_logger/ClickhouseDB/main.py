@@ -5,11 +5,15 @@ import asyncio
 import base64
 import httpx
 
-dotenv.load_dotenv()
+dotenv.load_dotenv("../.env")
 
 CLICKHOUSE_USER = os.getenv("CLICKHOUSE_USER")
 CLICKHOUSE_PASSWORD = os.getenv("CLICKHOUSE_PASSWORD")
 CLICKHOUSE_DB = os.getenv("CLICKHOUSE_DB")
+
+print(f"User: {CLICKHOUSE_USER}")
+print(f"Password: {CLICKHOUSE_PASSWORD}")
+print(f"Database: {CLICKHOUSE_DB}")
 
 
 class ClickhouseDBClient:
