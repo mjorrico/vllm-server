@@ -26,7 +26,7 @@ def get_db_client():
         host = "localhost"
         port = 8123
 
-    return ClickhouseDB(
+    return ClickhouseDBClient(
         host=host,
         port=port,
         user=USER,
