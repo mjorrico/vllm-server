@@ -118,9 +118,7 @@ services:
       - postgredb
 
     volumes:
-      - ./backend/app/api:/app/api
-      - ./backend/app/modules:/app/modules
-      - ./backend/app/worker:/app/worker
+      - ./backend/app:/app/app
     deploy:
       resources:
         limits:
