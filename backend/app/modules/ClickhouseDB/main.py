@@ -11,8 +11,6 @@ CLICKHOUSE_DB = os.getenv("CLICKHOUSE_DB")
 print(f"User: {CLICKHOUSE_USER}")
 print(f"Password: {CLICKHOUSE_PASSWORD}")
 print(f"Database: {CLICKHOUSE_DB}")
-print(f"Host: {CLICKHOUSE_HOST}")
-print(f"Port: {CLICKHOUSE_PORT}")
 
 
 class ClickhouseDBClient:
