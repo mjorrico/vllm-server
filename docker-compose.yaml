@@ -105,6 +105,25 @@ services:
               capabilities: [gpu]
     <<: *base-config
 
+  backend:
+    container_name: backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - postgredb
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    <<: *base-config
+
   postgredb:
     image: pgvector/pgvector:pg16
     container_name: postgredb
