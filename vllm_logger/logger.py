@@ -46,7 +46,7 @@ async def task_logger(db):
             data_batch = []
 
             # ClickHouse formatting for DateTime64(3): 'YYYY-MM-DD HH:MM:SS.mmm'
-            current_time = datetime.now()
+            current_time = datetime.utcnow()
             # Format time explicitly to ensure compatibility
             time_str = current_time.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
@@ -99,7 +99,7 @@ async def task_logger(db):
 
 async def insert_dummy_data(db):
     """Inserts 31 days of dummy metrics for 4 GPUs (1-second intervals)."""
-    start_time = datetime.now() - timedelta(days=31)
+    start_time = datetime.utcnow() - timedelta(days=31)
     batch, total = [], 0
     RETENTION_SECONDS = 31 * 24 * 60 * 60
     TOTAL_RECORDS = RETENTION_SECONDS * 4
