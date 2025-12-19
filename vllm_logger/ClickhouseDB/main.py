@@ -1,11 +1,8 @@
 import os
 import json
-import dotenv
 import asyncio
 import base64
 import httpx
-
-dotenv.load_dotenv("../.env")
 
 CLICKHOUSE_USER = os.getenv("CLICKHOUSE_USER")
 CLICKHOUSE_PASSWORD = os.getenv("CLICKHOUSE_PASSWORD")
@@ -71,7 +68,7 @@ if __name__ == "__main__":
 
     async def main():
         db = ClickhouseDBClient(
-            host="irvins",
+            host="clickhouse",
             port=8123,
         )
 
