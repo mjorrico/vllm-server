@@ -104,9 +104,9 @@ async def insert_dummy_data(db):
     RETENTION_SECONDS = 31 * 24 * 60 * 60
     TOTAL_RECORDS = RETENTION_SECONDS * 4
 
-    try:
-        print(f"Inserting records: 0/{TOTAL_RECORDS} (0%)", end="\r", flush=True)
+    print(f"Inserting records: 0/{TOTAL_RECORDS} (0%)", flush=True)
 
+    try:
         for sec in range(RETENTION_SECONDS):
             ts = (start_time + timedelta(seconds=sec)).strftime("%Y-%m-%d %H:%M:%S.%f")[
                 :-3
@@ -119,25 +119,45 @@ async def insert_dummy_data(db):
 
             if len(batch) >= 10000 or sec == RETENTION_SECONDS - 1:
                 query = f"INSERT INTO vllm_logger.vllm_log (created_at, gpu_index, gpu_utilization, memory_used, memory_total, temperature) VALUES {','.join(batch)}"
-                resp = await db.run_query(query)
 
-                if isinstance(resp, str) and resp.startswith("ClickHouse Error:"):
-                    print(f"\n[ERROR]: {resp}", flush=True)
+                # Retry mechanism
+                for attempt in range(3):
+                    resp = await db.run_query(query)
+
+                    if isinstance(resp, str) and resp.startswith("ClickHouse Error:"):
+                        print(
+                            f"\n[WARN] Insert failed (Attempt {attempt+1}/3): {resp}",
+                            flush=True,
+                        )
+                        await asyncio.sleep(1)  # Wait before retry
+                    else:
+                        # Success
+                        total += len(batch)
+                        percentage = (total / TOTAL_RECORDS) * 100
+                        print(
+                            f"Inserting records: {total}/{TOTAL_RECORDS} ({percentage:.2f}%)",
+                            flush=True,
+                        )
+                        break
                 else:
-                    total += len(batch)
-                    percentage = (total / TOTAL_RECORDS) * 100
                     print(
-                        f"Inserting records: {total}/{TOTAL_RECORDS} ({percentage:.2f}%)",
-                        end="\r",
+                        f"\n[ERROR] Failed to insert batch of {len(batch)} records after 3 attempts.",
                         flush=True,
                     )
 
                 batch = []
 
-        print(f"[SUCCESS] Inserted {total:,} records", flush=True)
+        if total == TOTAL_RECORDS:
+            print(f"[SUCCESS] Inserted all {total:,} records", flush=True)
+        else:
+            print(
+                f"[WARNING] Finished with {total:,}/{TOTAL_RECORDS} records ({TOTAL_RECORDS - total} missing)",
+                flush=True,
+            )
+
         await asyncio.sleep(31 * 24 * 60 * 60)
     except Exception as e:
-        print(f"[ERROR] {e} (inserted {total:,})", flush=True)
+        print(f"[ERROR] Logic failed: {e} (inserted {total:,})", flush=True)
 
 
 async def main():
