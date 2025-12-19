@@ -94,6 +94,7 @@ services:
     depends_on:
       - postgredb
     volumes:
+      - ./vllm_logger/ClickhouseDB/:/app/ClickhouseDB
       - ./vllm_logger/logger.py:/app/logger.py
     deploy:
       resources:
@@ -142,7 +143,7 @@ services:
       - "9000:9000"
     volumes:
       - clickhouse-data:/var/lib/clickhouse
-      - ./clickhouse_config/init_database.sql:/docker-entrypoint-initdb.s/init_database.sql
+      - ./clickhouse_config/init_database.sql:/docker-entrypoint-initdb.d/init_database.sql
       - ./clickhouse_config/logging.xml:/etc/clickhouse-server/logging.xml
     deploy:
       resources:
@@ -160,7 +161,6 @@ services:
         soft: 262144
         hard: 262144
     <<: *base-config
-
 
   minio:
     image: minio/minio:latest

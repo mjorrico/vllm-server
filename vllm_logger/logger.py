@@ -1,68 +1,54 @@
 import asyncio
 import os
 import sys
-import asyncpg
 import pynvml
-from datetime import datetime
+import random
+from datetime import datetime, timedelta
+from urllib.parse import urlparse
+
+from ClickhouseDB import ClickhouseDBClient
 
 # Configuration
-DSN = os.getenv("VLLM_LOGGER_DB_URI")
+DSN = os.getenv("VLLM_LOGGER_DB_URI")  # Format: http://host:port
+USER = os.getenv("CLICKHOUSE_USER", "default")
+PASSWORD = os.getenv("CLICKHOUSE_PASSWORD", "")
+DB_NAME = os.getenv("CLICKHOUSE_DB", "default")
 LOG_INTERVAL = 1
-CLEANUP_INTERVAL = 60 * 60 * 24  # 24 Hours
-RETENTION_SECONDS = 31 * 24 * 60 * 60
 
 
-async def ensure_schema(pool):
-    """Initializes the database schema."""
-    async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS vllm_log (
-                created_at timestamptz NOT NULL,
-                gpu_index integer NOT NULL,
-                gpu_utilization double precision NOT NULL,
-                memory_used bigint NOT NULL,
-                memory_total bigint NOT NULL,
-                temperature double precision,
-                PRIMARY KEY (created_at, gpu_index)
-            );
-        """
-        )
-        print("[INFO] Schema ensured.", flush=True)
+def get_db_client():
+    if DSN:
+        parsed = urlparse(DSN)
+        host = parsed.hostname
+        port = parsed.port
+    else:
+        # Fallback defaults if DSN not set (though DSN is expected)
+        host = "localhost"
+        port = 8123
+
+    return ClickhouseDBClient(
+        host=host,
+        port=port,
+        user=USER,
+        password=PASSWORD,
+        database=DB_NAME,
+    )
 
 
-async def task_cleanup(pool):
-    """Runs once every 24 hours to delete old logs."""
-    print(f"[TASK] Cleanup task started (Interval: {CLEANUP_INTERVAL}s)", flush=True)
-    while True:
-        try:
-            # asyncpg uses $1, $2 syntax, not %s
-            result = await pool.execute(
-                f"DELETE FROM vllm_log WHERE created_at < NOW() - INTERVAL '{RETENTION_SECONDS} seconds'"
-            )
-            # result string looks like "DELETE 150"
-            print(
-                f"[CLEANUP] {result} (Records older than {RETENTION_SECONDS} seconds)",
-                flush=True,
-            )
-        except Exception as e:
-            print(f"[ERROR] Cleanup failed: {e}", flush=True)
-
-        # Sleep for 24 hours (non-blocking)
-        await asyncio.sleep(CLEANUP_INTERVAL)
-
-
-async def task_logger(pool):
-    """Runs every 5 seconds to log GPU stats."""
+async def task_logger(db):
+    """Runs every 1 second to log GPU stats."""
     print(f"[TASK] Logger task started (Interval: {LOG_INTERVAL}s)", flush=True)
+
     while True:
         try:
             # 1. Get GPU Data (Synchronous but fast)
-            # If NVML is slow, we could wrap this in run_in_executor,
-            # but usually it's sub-millisecond.
             device_count = pynvml.nvmlDeviceGetCount()
             data_batch = []
-            current_time = datetime.now()
+
+            # ClickHouse formatting for DateTime64(3): 'YYYY-MM-DD HH:MM:SS.mmm'
+            current_time = datetime.utcnow()
+            # Format time explicitly to ensure compatibility
+            time_str = current_time.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
             for i in range(device_count):
                 handle = pynvml.nvmlDeviceGetHandleByIndex(i)
@@ -73,23 +59,31 @@ async def task_logger(pool):
                         handle, pynvml.NVML_TEMPERATURE_GPU
                     )
                 except pynvml.NVMLError:
-                    temp = None
+                    temp = "NULL"  # ClickHouse Nullable handling
 
-                # Prepare tuple for bulk insert
+                # Prepare value string: (created_at, gpu_index, gpu_utilization, memory_used, memory_total, temperature)
+                temp_val = str(temp) if temp != "NULL" else "NULL"
                 data_batch.append(
-                    (current_time, i, float(util), mem.used, mem.total, temp)
+                    f"('{time_str}', {i}, {float(util)}, {mem.used}, {mem.total}, {temp_val})"
                 )
 
-            # 2. Insert Data (Async)
-            async with pool.acquire() as conn:
-                await conn.executemany(
-                    """
-                    INSERT INTO vllm_log 
-                    (created_at, gpu_index, gpu_utilization, memory_used, memory_total, temperature) 
-                    VALUES ($1, $2, $3, $4, $5, $6)
-                """,
-                    data_batch,
-                )
+            if not data_batch:
+                await asyncio.sleep(LOG_INTERVAL)
+                continue
+
+            # 2. Insert Data (Async via ClickhouseDB driver)
+            values_str = ",".join(data_batch)
+            query = f"""
+                INSERT INTO vllm_logger.vllm_log 
+                (created_at, gpu_index, gpu_utilization, memory_used, memory_total, temperature) 
+                VALUES {values_str}
+            """
+
+            response = await db.run_query(query)
+
+            # Check for error string in response (since run_query returns error string or dict/None)
+            if isinstance(response, str) and response.startswith("ClickHouse Error:"):
+                print(f"[ERROR] Insert failed: {response}", flush=True)
 
             # Optional: Verbose logging
             # print(f"[LOG] Inserted metrics for {device_count} GPUs", flush=True)
@@ -99,127 +93,97 @@ async def task_logger(pool):
             # If DB is down, wait a bit longer before retrying to avoid log spam
             await asyncio.sleep(5)
 
-        # Sleep for 5 seconds (non-blocking)
+        # Sleep for LOG_INTERVAL (non-blocking)
         await asyncio.sleep(LOG_INTERVAL)
 
 
-async def populate_test_data_30_days(pool):
-    """
-    Testing function to insert logs into vllm_log table with 1 second delta for 30 days.
-    This is for debugging purposes to quickly populate the table.
-    """
-    import random
-    from datetime import timedelta
+async def insert_dummy_data(db):
+    """Inserts 31 days of dummy metrics for 4 GPUs (1-second intervals)."""
+    start_time = datetime.utcnow() - timedelta(days=31)
+    batch, total = [], 0
+    RETENTION_SECONDS = 31 * 24 * 60 * 60
+    TOTAL_RECORDS = RETENTION_SECONDS * 4
 
-    print("[TEST] Starting to populate 30 days of test data...", flush=True)
-
-    # Configuration
-    NUM_GPUS = 4
-    DAYS = 30
-    TOTAL_SECONDS = DAYS * 24 * 60 * 60  # 2,592,000 seconds
-    BATCH_SIZE = 10000  # Insert in batches for better performance
-
-    # Calculate end time (now) and start time (30 days ago)
-    end_time = datetime.now()
-    start_time = end_time - timedelta(days=DAYS)
-
-    print(f"[TEST] Generating data from {start_time} to {end_time}", flush=True)
-    print(f"[TEST] Total records to insert: {TOTAL_SECONDS * NUM_GPUS:,}", flush=True)
-
-    batch = []
-    records_inserted = 0
+    print(f"Inserting records: 0/{TOTAL_RECORDS} (0%)", flush=True)
 
     try:
-        async with pool.acquire() as conn:
-            for second_offset in range(TOTAL_SECONDS):
-                current_time = start_time + timedelta(seconds=second_offset)
+        for sec in range(RETENTION_SECONDS):
+            ts = (start_time + timedelta(seconds=sec)).strftime("%Y-%m-%d %H:%M:%S.%f")[
+                :-3
+            ]
+            for gpu in range(4):
+                batch.append(
+                    f"('{ts}', {gpu}, {round(random.uniform(20, 95), 2)}, "
+                    f"{random.randint(2_000_000_000, 22_000_000_000)}, 24000000000, {random.randint(45, 85)})"
+                )
 
-                # Generate data for each GPU
-                for gpu_index in range(NUM_GPUS):
-                    # Generate realistic GPU metrics
-                    gpu_utilization = random.uniform(20.0, 95.0)
-                    memory_total = 24 * 1024 * 1024 * 1024  # 24 GB
-                    memory_used = int(memory_total * random.uniform(0.3, 0.9))
-                    temperature = random.uniform(45.0, 82.0)
+            if len(batch) >= 10000 or sec == RETENTION_SECONDS - 1:
+                query = f"INSERT INTO vllm_logger.vllm_log (created_at, gpu_index, gpu_utilization, memory_used, memory_total, temperature) VALUES {','.join(batch)}"
 
-                    batch.append(
-                        (
-                            current_time,
-                            gpu_index,
-                            gpu_utilization,
-                            memory_used,
-                            memory_total,
-                            temperature,
+                # Retry mechanism
+                for attempt in range(3):
+                    resp = await db.run_query(query)
+
+                    if isinstance(resp, str) and resp.startswith("ClickHouse Error:"):
+                        print(
+                            f"\n[WARN] Insert failed (Attempt {attempt+1}/3): {resp}",
+                            flush=True,
                         )
-                    )
-
-                # Insert batch when it reaches BATCH_SIZE
-                if len(batch) >= BATCH_SIZE:
-                    await conn.executemany(
-                        """
-                        INSERT INTO vllm_log 
-                        (created_at, gpu_index, gpu_utilization, memory_used, memory_total, temperature) 
-                        VALUES ($1, $2, $3, $4, $5, $6)
-                        """,
-                        batch,
-                    )
-                    records_inserted += len(batch)
-                    progress = (second_offset / TOTAL_SECONDS) * 100
+                        await asyncio.sleep(1)  # Wait before retry
+                    else:
+                        # Success
+                        total += len(batch)
+                        percentage = (total / TOTAL_RECORDS) * 100
+                        print(
+                            f"Inserting records: {total}/{TOTAL_RECORDS} ({percentage:.2f}%)",
+                            flush=True,
+                        )
+                        break
+                else:
                     print(
-                        f"[TEST] Progress: {progress:.1f}% ({records_inserted:,} records)",
+                        f"\n[ERROR] Failed to insert batch of {len(batch)} records after 3 attempts.",
                         flush=True,
                     )
-                    batch = []
 
-            # Insert remaining records
-            if batch:
-                await conn.executemany(
-                    """
-                    INSERT INTO vllm_log 
-                    (created_at, gpu_index, gpu_utilization, memory_used, memory_total, temperature) 
-                    VALUES ($1, $2, $3, $4, $5, $6)
-                    """,
-                    batch,
-                )
-                records_inserted += len(batch)
+                batch = []
 
-        print(f"[TEST] Successfully inserted {records_inserted:,} records!", flush=True)
+        if total == TOTAL_RECORDS:
+            print(f"[SUCCESS] Inserted all {total:,} records", flush=True)
+        else:
+            print(
+                f"[WARNING] Finished with {total:,}/{TOTAL_RECORDS} records ({TOTAL_RECORDS - total} missing)",
+                flush=True,
+            )
 
-        await asyncio.sleep(50000)
-
+        await asyncio.sleep(31 * 24 * 60 * 60)
     except Exception as e:
-        print(f"[ERROR] Test data population failed: {e}", flush=True)
-        raise
+        print(f"[ERROR] Logic failed: {e} (inserted {total:,})", flush=True)
 
 
 async def main():
-    print("[START] Starting Async VLLM Logger...", flush=True)
+    print("[START] Starting Async VLLM Logger (ClickHouse Driver)...", flush=True)
 
     # 1. Init NVML
     try:
         pynvml.nvmlInit()
     except pynvml.NVMLError as e:
         print(f"[FATAL] NVML Init failed: {e}")
-        sys.exit(1)
+        # sys.exit(1) # Commented out for dev environment if no GPU
 
-    # 2. Init DB Connection Pool
-    # We use a pool so multiple tasks can talk to DB if needed
-    try:
-        pool = await asyncpg.create_pool(DSN)
-        await ensure_schema(pool)
-    except Exception as e:
-        print(f"[FATAL] DB Connection failed: {e}")
-        sys.exit(1)
+    # 2. Init DB Client
+    db = get_db_client()
 
-    # 3. Run Tasks Concurrently
+    # 3. Run Logger Task
     try:
-        # await asyncio.gather(task_logger(pool), task_cleanup(pool))
-        await populate_test_data_30_days(pool)
+        # await task_logger(db)
+        await insert_dummy_data(db)
     except asyncio.CancelledError:
         print("[STOP] Tasks cancelled.")
     finally:
-        await pool.close()
-        pynvml.nvmlShutdown()
+        try:
+            pynvml.nvmlShutdown()
+        except:
+            pass
         print("[STOP] Shutdown complete.")
 
 
