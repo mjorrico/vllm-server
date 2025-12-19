@@ -12,6 +12,7 @@ async def get_metrics():
         host="clickhouse",
         port=8123,
     )
+    print(f"Querying from database: {CLICKHOUSE_DB_VLLM_LOGGER}", flush=True)
     # queries to be run
     query = f"""SELECT 
     toDate(created_at) AS day, 
