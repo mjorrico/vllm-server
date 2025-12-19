@@ -9,7 +9,6 @@ from urllib.parse import urlparse
 from ClickhouseDB import ClickhouseDBClient
 
 # Configuration
-DSN = os.getenv("VLLM_LOGGER_DB_URI")  # Format: http://host:port
 USER = os.getenv("CLICKHOUSE_USER", "default")
 PASSWORD = os.getenv("CLICKHOUSE_PASSWORD", "")
 DB_NAME = os.getenv("CLICKHOUSE_DB_VLLM_LOGGER", "default")
@@ -17,18 +16,9 @@ LOG_INTERVAL = 1
 
 
 def get_db_client():
-    if DSN:
-        parsed = urlparse(DSN)
-        host = parsed.hostname
-        port = parsed.port
-    else:
-        # Fallback defaults if DSN not set (though DSN is expected)
-        host = "localhost"
-        port = 8123
-
     return ClickhouseDBClient(
-        host=host,
-        port=port,
+        "clickhouse",
+        8123,
         user=USER,
         password=PASSWORD,
         database=DB_NAME,
