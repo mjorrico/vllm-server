@@ -6,7 +6,10 @@ router = APIRouter()
 
 @router.get("/metrics")
 async def get_metrics():
-    db = ClickhouseDBClient()
+    db = ClickhouseDBClient(
+        host="clickhouse",
+        port=8123,
+    )
     # queries to be run
     query = """
         SELECT 
