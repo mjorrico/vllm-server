@@ -12,7 +12,7 @@ from ClickhouseDB import ClickhouseDBClient
 DSN = os.getenv("VLLM_LOGGER_DB_URI")  # Format: http://host:port
 USER = os.getenv("CLICKHOUSE_USER", "default")
 PASSWORD = os.getenv("CLICKHOUSE_PASSWORD", "")
-DB_NAME = os.getenv("CLICKHOUSE_DB", "default")
+DB_NAME = os.getenv("CLICKHOUSE_DB_VLLM_LOGGER", "default")
 LOG_INTERVAL = 1
 
 
