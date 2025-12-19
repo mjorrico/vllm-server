@@ -116,6 +116,11 @@ services:
       - .env
     depends_on:
       - postgredb
+
+    volumes:
+      - ./backend/app/api:/app/api
+      - ./backend/app/modules:/app/modules
+      - ./backend/app/worker:/app/worker
     deploy:
       resources:
         limits:
