@@ -5,7 +5,7 @@ import pynvml
 import random
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
-from tqdm import tqdm
+
 from ClickhouseDB import ClickhouseDBClient
 
 # Configuration
@@ -105,30 +105,34 @@ async def insert_dummy_data(db):
     TOTAL_RECORDS = RETENTION_SECONDS * 4
 
     try:
-        with tqdm(
-            total=TOTAL_RECORDS, desc="Inserting records", unit=" records"
-        ) as pbar:
-            for sec in range(RETENTION_SECONDS):
-                ts = (start_time + timedelta(seconds=sec)).strftime(
-                    "%Y-%m-%d %H:%M:%S.%f"
-                )[:-3]
-                for gpu in range(4):
-                    batch.append(
-                        f"('{ts}', {gpu}, {round(random.uniform(20, 95), 2)}, "
-                        f"{random.randint(2_000_000_000, 22_000_000_000)}, 24000000000, {random.randint(45, 85)})"
+        print(f"Inserting records: 0/{TOTAL_RECORDS} (0%)", end="\r", flush=True)
+
+        for sec in range(RETENTION_SECONDS):
+            ts = (start_time + timedelta(seconds=sec)).strftime("%Y-%m-%d %H:%M:%S.%f")[
+                :-3
+            ]
+            for gpu in range(4):
+                batch.append(
+                    f"('{ts}', {gpu}, {round(random.uniform(20, 95), 2)}, "
+                    f"{random.randint(2_000_000_000, 22_000_000_000)}, 24000000000, {random.randint(45, 85)})"
+                )
+
+            if len(batch) >= 10000 or sec == RETENTION_SECONDS - 1:
+                query = f"INSERT INTO vllm_logger.vllm_log (created_at, gpu_index, gpu_utilization, memory_used, memory_total, temperature) VALUES {','.join(batch)}"
+                resp = await db.run_query(query)
+
+                if isinstance(resp, str) and resp.startswith("ClickHouse Error:"):
+                    print(f"\n[ERROR]: {resp}", flush=True)
+                else:
+                    total += len(batch)
+                    percentage = (total / TOTAL_RECORDS) * 100
+                    print(
+                        f"Inserting records: {total}/{TOTAL_RECORDS} ({percentage:.2f}%)",
+                        end="\r",
+                        flush=True,
                     )
 
-                if len(batch) >= 1000 or sec == RETENTION_SECONDS - 1:
-                    query = f"INSERT INTO vllm_logger.vllm_log (created_at, gpu_index, gpu_utilization, memory_used, memory_total, temperature) VALUES {','.join(batch)}"
-                    resp = await db.run_query(query)
-
-                    if isinstance(resp, str) and resp.startswith("ClickHouse Error:"):
-                        print(f"\n[ERROR]: {resp}", flush=True)
-                    else:
-                        pbar.update(len(batch))
-                        total += len(batch)
-
-                    batch = []
+                batch = []
 
         print(f"[SUCCESS] Inserted {total:,} records", flush=True)
         await asyncio.sleep(31 * 24 * 60 * 60)
