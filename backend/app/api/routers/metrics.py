@@ -24,7 +24,44 @@ GROUP BY day
 ORDER BY day DESC"""
     result_historical = await db.run_query(query)
 
-    model_id = "Unknown"
+    # Query the latest entry for status checking
+    query_latest = f"""SELECT 
+    created_at,
+    gpu_utilization, 
+    memory_used, 
+    memory_total, 
+    temperature
+FROM {CLICKHOUSE_DB_VLLM_LOGGER}.vllm_log
+ORDER BY created_at DESC 
+LIMIT 1"""
+
+    result_latest = await db.run_query(query_latest)
+
+    latest_data = {}
+    is_online = False
+
+    if result_latest and "data" in result_latest and result_latest["data"]:
+        latest_entry = result_latest["data"][0]
+
+        # Determine status
+        from datetime import datetime
+
+        created_at_str = latest_entry.get("created_at")
+        if created_at_str:
+            try:
+                # The logger inserts "%Y-%m-%d %H:%M:%S.%f" (truncated to 3 decimal places)
+                created_at = datetime.strptime(created_at_str, "%Y-%m-%d %H:%M:%S.%f")
+            except ValueError:
+                # Fallback for seconds precision if microseconds are missing
+                created_at = datetime.strptime(created_at_str, "%Y-%m-%d %H:%M:%S")
+
+            # Check if within last 1 minute
+            if (datetime.utcnow() - created_at).total_seconds() < 60:
+                is_online = True
+
+        latest_data = latest_entry
+
+    model_id = None
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get("http://vllm:9009/v1/models")
@@ -37,5 +74,10 @@ ORDER BY day DESC"""
         "gpu": "NVIDIA RTX 2060",
         "llm": model_id,
         "historical": result_historical["data"],
+        "gpu_load": latest_data.get("gpu_utilization", 0),
+        "memory_usage": round(latest_data.get("memory_used", 0) / 1024**3, 2),
+        "memory_total": round(latest_data.get("memory_total", 0) / 1024**3, 2),
+        "temperature": latest_data.get("temperature", 0),
+        "status": "online" if is_online else "offline",
     }
     return metrics_information
