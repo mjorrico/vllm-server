@@ -4,7 +4,6 @@ import sys
 import pynvml
 import random
 from datetime import datetime, timedelta
-from urllib.parse import urlparse
 
 from ClickhouseDB import ClickhouseDBClient
 
@@ -69,14 +68,28 @@ async def task_logger(db):
                 VALUES {values_str}
             """
 
-            response = await db.run_query(query)
+            # Retry mechanism
+            for attempt in range(3):
+                response = await db.run_query(query)
 
-            # Check for error string in response (since run_query returns error string or dict/None)
-            if isinstance(response, str) and response.startswith("ClickHouse Error:"):
-                print(f"[ERROR] Insert failed: {response}", flush=True)
-
-            # Optional: Verbose logging
-            # print(f"[LOG] Inserted metrics for {device_count} GPUs", flush=True)
+                if isinstance(response, str) and response.startswith(
+                    "ClickHouse Error:"
+                ):
+                    print(
+                        f"[WARN] Insert failed (Attempt {attempt+1}/3): {response}",
+                        flush=True,
+                    )
+                    await asyncio.sleep(1)
+                else:
+                    # Success
+                    # Optional: Verbose logging
+                    # print(f"[LOG] Inserted metrics for {device_count} GPUs", flush=True)
+                    break
+            else:
+                print(
+                    f"[ERROR] Failed to insert batch of {len(data_batch)} records after 3 attempts.",
+                    flush=True,
+                )
 
         except Exception as e:
             print(f"[ERROR] Logging failed: {e}", flush=True)
@@ -165,8 +178,8 @@ async def main():
 
     # 3. Run Logger Task
     try:
-        # await task_logger(db)
-        await insert_dummy_data(db)
+        await task_logger(db)
+        # await insert_dummy_data(db)
     except asyncio.CancelledError:
         print("[STOP] Tasks cancelled.")
     finally:

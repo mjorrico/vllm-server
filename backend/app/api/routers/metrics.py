@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from app.modules.ClickhouseDB.main import ClickhouseDBClient
 import os
+import httpx
 
 CLICKHOUSE_DB_VLLM_LOGGER = os.getenv("CLICKHOUSE_DB_VLLM_LOGGER")
 router = APIRouter()
@@ -21,5 +22,20 @@ async def get_metrics():
 FROM {CLICKHOUSE_DB_VLLM_LOGGER}.vllm_log
 GROUP BY day
 ORDER BY day DESC"""
-    result = await db.run_query(query)
-    return result
+    result_historical = await db.run_query(query)
+
+    model_id = "Unknown"
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get("http://vllm:9009/v1/models")
+            resp.raise_for_status()
+            model_id = resp.json()["data"][0]["id"]
+    except Exception as e:
+        print(f"Failed to fetch model ID: {e}", flush=True)
+
+    metrics_information = {
+        "gpu": "NVIDIA RTX 2060",
+        "llm": model_id,
+        "historical": result_historical["data"],
+    }
+    return metrics_information
