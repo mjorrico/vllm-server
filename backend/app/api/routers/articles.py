@@ -16,7 +16,7 @@ async def get_article(article_id: str) -> Dict[str, Any]:
         host="postgredb",
         user=os.getenv("POSTGRES_USER", "postgres"),
         password=os.getenv("POSTGRES_PASSWORD", "postgres"),
-        database=os.getenv("POSTGRES_DB", "postgres"),
+        database=os.getenv("BACKEND_POSTGRES_DB", "postgres"),
     )
 
     try:
@@ -56,7 +56,7 @@ async def create_article(article: CreateArticleRequest) -> Dict[str, Any]:
         host="postgredb",
         user=os.getenv("POSTGRES_USER", "postgres"),
         password=os.getenv("POSTGRES_PASSWORD", "postgres"),
-        database=os.getenv("POSTGRES_DB", "postgres"),
+        database=os.getenv("BACKEND_POSTGRES_DB", "postgres"),
     )
 
     try:
