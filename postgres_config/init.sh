@@ -1,20 +1,29 @@
 #!/bin/bash
 set -e
 
-POSTGRES_DB="${POSTGRES_DB:-postgres}"
+BACKEND_POSTGRES_DB="${BACKEND_POSTGRES_DB:-postgres}"
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-postgres}"
 
+MLFLOW_POSTGRES_DB="${MLFLOW_POSTGRES_DB:-postgres}"
+
 # --- Part 1: Database Verification ---
-echo "Verifying database: $POSTGRES_DB"
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<EOSQL
-    SELECT 'CREATE DATABASE ${POSTGRES_DB}'
-    WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${POSTGRES_DB}')\gexec
+echo "Verifying database: $BACKEND_POSTGRES_DB"
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "postgres" <<EOSQL
+    SELECT 'CREATE DATABASE ${BACKEND_POSTGRES_DB}'
+    WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${BACKEND_POSTGRES_DB}')\gexec
+EOSQL
+
+# --- Part 1.5: MLflow Database Verification ---
+echo "Verifying database: $MLFLOW_POSTGRES_DB"
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "postgres" <<EOSQL
+    SELECT 'CREATE DATABASE ${MLFLOW_POSTGRES_DB}'
+    WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${MLFLOW_POSTGRES_DB}')\gexec
 EOSQL
 
 # --- Part 2: Table Initialization ---
-echo "Initializing tables in: $POSTGRES_DB"
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<EOSQL
+echo "Initializing tables in: $BACKEND_POSTGRES_DB"
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$BACKEND_POSTGRES_DB" <<EOSQL
 
     -- 1. Article Table (UUIDv7)
     CREATE TABLE IF NOT EXISTS articles (

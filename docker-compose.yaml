@@ -9,8 +9,6 @@ x-base-config: &base-config
     - vllm-network
 
 services:
-
-
   # vllm:
   #   image: vllm/vllm-openai:v0.10.2
   #   container_name: vllm
@@ -63,28 +61,28 @@ services:
           memory: 512M
     <<: *base-config
 
-  vllm_logger:
-    container_name: vllm_logger
-    build:
-      context: ./vllm_logger
-      dockerfile: Dockerfile
-    ports:
-      - "8008:8000"
-    env_file:
-      - .env
-    depends_on:
-      - postgredb
-    volumes:
-      - ./vllm_logger/ClickhouseDB/:/app/ClickhouseDB
-      - ./vllm_logger/logger.py:/app/logger.py
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    <<: *base-config
+  # vllm_logger:
+  #   container_name: vllm_logger
+  #   build:
+  #     context: ./vllm_logger
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "8008:8000"
+  #   env_file:
+  #     - .env
+  #   depends_on:
+  #     - postgredb
+  #   volumes:
+  #     - ./vllm_logger/ClickhouseDB/:/app/ClickhouseDB
+  #     - ./vllm_logger/logger.py:/app/logger.py
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
+  #   <<: *base-config
 
   backend:
     container_name: backend
