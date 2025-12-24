@@ -9,26 +9,7 @@ x-base-config: &base-config
     - vllm-network
 
 services:
-  nginx:
-    container_name: nginx
-    image: nginx:latest
-    volumes:
-      - ./nginx_config/nginx.conf:/etc/nginx/nginx.conf:ro
-      # - ./certbot/conf:/etc/letsencrypt:ro
-      # - ./certbot/www:/var/www/certbot:ro
-    depends_on:
-      # - vllm
-      - litellm
-    ports:
-      - 80:80
-        #- 443:443
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
-    <<: *base-config
+
 
   # vllm:
   #   image: vllm/vllm-openai:v0.10.2
@@ -128,20 +109,20 @@ services:
     <<: *base-config
 
   postgredb:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg18
     container_name: postgredb
     # environment:
     #   - DB_HOST=localhost
     env_file:
       - .env
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
       - ./postgres_config/init.sh:/docker-entrypoint-initdb.d/init.sh
     restart: always
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 3s
       timeout: 3s
       retries: 10
