@@ -1,13 +1,14 @@
 from fastapi import APIRouter
 from app.modules.ClickhouseDB.main import ClickhouseDBClient
 import os
+from datetime import datetime
 import httpx
 
 CLICKHOUSE_DB_VLLM_LOGGER = os.getenv("CLICKHOUSE_DB_VLLM_LOGGER")
-router = APIRouter()
+router = APIRouter(prefix="/metrics", tags=["metrics"])
 
 
-@router.get("/metrics")
+@router.get("/gpu")
 async def get_metrics():
     db = ClickhouseDBClient(
         host="clickhouse",
@@ -42,9 +43,6 @@ LIMIT 1"""
 
     if result_latest and "data" in result_latest and result_latest["data"]:
         latest_entry = result_latest["data"][0]
-
-        # Determine status
-        from datetime import datetime
 
         created_at_str = latest_entry.get("created_at")
         if created_at_str:
